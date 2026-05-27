@@ -1,7 +1,7 @@
 
 (function () {
     // 배포 후 콘솔에서 버전 확인 (카페24 scripttag 캐시 여부 점검용)
-    window.__bizAuthFilterVersion = '2026-05-27-loading-v2';
+    window.__bizAuthFilterVersion = '2026-05-27-no-early-fail-v3';
 
     var state = {
         ntsVerified: false,
@@ -10,7 +10,8 @@
         verifyPending: false,
         verifySeq: 0,
         verifyAbort: null,
-        verifyBtnLabel: ''
+        verifyBtnLabel: '',
+        verifyMsgObserver: null
     };
 
     // scripttag src(biz-auth-filter.js) 호스트 → API 베이스 URL (카페24 쇼핑몰 도메인과 다름)
@@ -50,10 +51,49 @@
         return parts.join('');
     }
 
+    function getBizVerifyMsgEl() {
+        return document.getElementById('bizVerifyMsg');
+    }
+
+    var INVALID_BIZ_RE = /유효하지\s*않은\s*사업자/;
+
+    function hideInvalidBizWarnNodes() {
+        var nodes = document.querySelectorAll('#bizVerifyMsg, .biz-verify-msg, .txtWarn');
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            if (n.id === 'bizVerifyMsg' && n.classList.contains('biz-verify-loading')) continue;
+            var t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!INVALID_BIZ_RE.test(t)) continue;
+            n.setAttribute('data-biz-hidden-pending', '1');
+            n.style.setProperty('display', 'none', 'important');
+        }
+    }
+
+    function restoreHiddenBizWarnNodes() {
+        var hidden = document.querySelectorAll('[data-biz-hidden-pending="1"]');
+        for (var i = 0; i < hidden.length; i++) {
+            hidden[i].style.removeProperty('display');
+            hidden[i].removeAttribute('data-biz-hidden-pending');
+        }
+    }
+
+    // 확인 중에는 카페24가 넣은 txtWarn(유효하지 않은…) 숨김
+    function setBizVerifyPendingUi(pending) {
+        document.body.classList.toggle('biz-verify-pending', !!pending);
+        var el = getBizVerifyMsgEl();
+        if (el) el.setAttribute('data-biz-pending', pending ? '1' : '');
+        if (pending) hideInvalidBizWarnNodes();
+        else restoreHiddenBizWarnNodes();
+    }
+
+    var LOADING_MSG = '국세청에서 확인 중입니다. 잠시만 기다려 주세요.';
+
     // 사업자 확인 메시지 — true:성공, false:실패, null:로딩(중립), 빈문자:초기화
     function setBizVerifyMsg(text, status) {
-        var el = document.getElementById('bizVerifyMsg');
+        var el = getBizVerifyMsgEl();
         if (!el) return;
+
+        if (status === false && state.verifyPending) return;
 
         if (status === null) {
             el.className = 'biz-verify-msg gBlank5 biz-verify-loading';
@@ -79,9 +119,11 @@
         var btn = document.getElementById('btnBizVerify');
         if (btn) {
             if (locked) {
-                if (!state.verifyBtnLabel) {
-                    state.verifyBtnLabel =
-                        (btn.textContent || btn.innerText || '').trim() || '사업자 확인';
+                var btnText = (btn.textContent || btn.innerText || '').trim();
+                if (btnText && btnText !== '확인 중…') {
+                    state.verifyBtnLabel = btnText;
+                } else if (!state.verifyBtnLabel) {
+                    state.verifyBtnLabel = '사업자 확인';
                 }
                 btn.classList.add('biz-verify-busy');
                 btn.setAttribute('disabled', 'disabled');
@@ -117,8 +159,47 @@
             '#bizVerifyMsg.txtWarn.biz-verify-loading,#bizVerifyMsg.txtSuccess.biz-verify-loading{' +
             'color:#333 !important;background:#f0f4f8 !important;}' +
             '#btnBizVerify.biz-verify-busy{opacity:.7 !important;cursor:wait !important;}' +
-            '.biz-no-cell input:disabled{background:#f5f5f5 !important;}';
+            '.biz-no-cell input:disabled{background:#f5f5f5 !important;}' +
+            'body.biz-verify-pending #bizVerifyMsg.txtWarn:not(.biz-verify-loading),' +
+            'body.biz-verify-pending #bizVerifyMsg:not(.biz-verify-loading){' +
+            'display:none !important;}' +
+            'body.biz-verify-pending .biz-verify-msg.txtWarn:not(.biz-verify-loading){' +
+            'display:none !important;}';
         document.head.appendChild(style);
+    }
+
+    // 카페24 기본 검증이 #bizVerifyMsg에 실패 문구를 덮어쓸 때 로딩으로 되돌림
+    function watchBizVerifyMsgWhilePending() {
+        var el = getBizVerifyMsgEl();
+        if (!el || typeof MutationObserver === 'undefined') return;
+
+        if (state.verifyMsgObserver) {
+            state.verifyMsgObserver.disconnect();
+            state.verifyMsgObserver = null;
+        }
+        if (!state.verifyPending) return;
+
+        state.verifyMsgObserver = new MutationObserver(function () {
+            if (!state.verifyPending) return;
+            hideInvalidBizWarnNodes();
+            if (el.classList.contains('biz-verify-loading')) return;
+            setBizVerifyMsg(LOADING_MSG, null);
+        });
+        state.verifyMsgObserver.observe(el, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['class']
+        });
+    }
+
+    function stopWatchBizVerifyMsg() {
+        if (state.verifyMsgObserver) {
+            state.verifyMsgObserver.disconnect();
+            state.verifyMsgObserver = null;
+        }
+        setBizVerifyPendingUi(false);
     }
 
     // API 응답 후 UI 반영 (늦게 온 응답은 무시)
@@ -126,6 +207,7 @@
         if (seq !== state.verifySeq) return;
 
         state.verifyPending = false;
+        stopWatchBizVerifyMsg();
         setVerifyUiLocked(false);
 
         if (data && data.ok) {
@@ -152,6 +234,7 @@
         if (seq !== state.verifySeq) return;
 
         state.verifyPending = false;
+        stopWatchBizVerifyMsg();
         setVerifyUiLocked(false);
         state.ntsVerified = false;
         state.verifiedBizNo = '';
@@ -186,6 +269,7 @@
             }
             state.verifySeq += 1;
             state.verifyPending = false;
+            stopWatchBizVerifyMsg();
             setVerifyUiLocked(false);
         }
         state.ntsVerified = false;
@@ -236,8 +320,10 @@
         if (cssnMsg) cssnMsg.innerHTML = '';
 
         setDuplBtnVisible(false);
+        setBizVerifyPendingUi(true);
+        setBizVerifyMsg(LOADING_MSG, null);
         setVerifyUiLocked(true);
-        setBizVerifyMsg('국세청에서 확인 중입니다. 잠시만 기다려 주세요.', null);
+        watchBizVerifyMsgWhilePending();
 
         fetch(apiBase + '/api/biz/status', {
             method: 'POST',
@@ -350,10 +436,17 @@
 
         var verifyBtn = document.getElementById('btnBizVerify');
         if (verifyBtn) {
-            verifyBtn.addEventListener('click', function (e) {
+            function onVerifyClick(e) {
                 e.preventDefault();
+                e.stopPropagation();
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
                 verifyBizNo();
-            });
+            }
+            verifyBtn.addEventListener('click', onVerifyClick, true);
+            verifyBtn.addEventListener('mousedown', function (e) {
+                e.stopPropagation();
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            }, true);
         }
 
         setInterval(syncDuplState, 400);
