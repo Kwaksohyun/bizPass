@@ -46,4 +46,8 @@ export const config = {
     url: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     isProduction: process.env.NODE_ENV === "production",
   },
+  /** 공공데이터포털 — 국세청 사업자등록정보 상태조회 */
+  nts: {
+    serviceKey: process.env.DATA_GO_KR_SERVICE_KEY || "",
+  },
 };

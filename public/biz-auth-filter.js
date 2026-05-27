@@ -1,7 +1,21 @@
 
 (function () {
-    var MOCK_PASS_BIZ_NO = '1234512345';
     var state = { ntsVerified: false, duplVerified: false, verifiedBizNo: '' };
+
+    // scripttag src(biz-auth-filter.js) 호스트 → API 베이스 URL (카페24 쇼핑몰 도메인과 다름)
+    function getApiBase() {
+        var scripts = document.getElementsByTagName('script');
+        for (var i = 0; i < scripts.length; i++) {
+            var src = scripts[i].src || '';
+            if (src.indexOf('biz-auth-filter.js') === -1) continue;
+            try {
+                return new URL(src).origin;
+            } catch (e) {
+                return '';
+            }
+        }
+        return '';
+    }
 
     // 사업자번호 입력 영역(.biz-no-cell) DOM 요소를 반환
     function getBizNoCell() {
@@ -62,7 +76,7 @@
         updateJoinButton();
     }
 
-    // 사업자번호 NTS 확인(목업) 후 중복확인 단계로 진행
+    // 사업자번호 국세청 상태조회(b_stt_cd 01만 통과) 후 중복확인 단계로 진행
     function verifyBizNo() {
         var cell = getBizNoCell();
         var bizNo = getBizNoValue(cell);
@@ -70,23 +84,62 @@
             alert('사업자번호를 입력해 주세요.');
             return;
         }
+        if (bizNo.length !== 10) {
+            alert('사업자번호 10자리를 입력해 주세요.');
+            return;
+        }
+
+        var apiBase = getApiBase();
+        if (!apiBase) {
+            setBizVerifyMsg('사업자 확인 API 주소를 찾을 수 없습니다.', false);
+            return;
+        }
 
         state.duplVerified = false;
+        state.ntsVerified = false;
+        state.verifiedBizNo = '';
         var cssnMsg = document.querySelector('.cssn-dupl-msg');
         if (cssnMsg) cssnMsg.innerHTML = '';
 
-        if (bizNo === MOCK_PASS_BIZ_NO) {
-            state.ntsVerified = true;
-            state.verifiedBizNo = bizNo;
-            setBizVerifyMsg('사업자 확인이 완료되었습니다. 중복확인을 진행해 주세요.', true);
-            setDuplBtnVisible(true);
-        } else {
-            state.ntsVerified = false;
-            state.verifiedBizNo = '';
-            setBizVerifyMsg('유효하지 않은 사업자번호입니다.', false);
-            setDuplBtnVisible(false);
-        }
+        setBizVerifyMsg('사업자 확인 중...', false);
+        setDuplBtnVisible(false);
         updateJoinButton();
+
+        fetch(apiBase + '/api/biz/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ b_no: bizNo })
+        })
+            .then(function (res) {
+                return res.json().then(function (data) {
+                    return { httpOk: res.ok, data: data };
+                });
+            })
+            .then(function (result) {
+                var data = result.data;
+                if (data && data.ok) {
+                    state.ntsVerified = true;
+                    state.verifiedBizNo = bizNo;
+                    setBizVerifyMsg('사업자 확인이 완료되었습니다. 중복확인을 진행해 주세요.', true);
+                    setDuplBtnVisible(true);
+                } else {
+                    state.ntsVerified = false;
+                    state.verifiedBizNo = '';
+                    setBizVerifyMsg(
+                        (data && data.message) || '유효하지 않은 사업자번호입니다.',
+                        false
+                    );
+                    setDuplBtnVisible(false);
+                }
+                updateJoinButton();
+            })
+            .catch(function () {
+                state.ntsVerified = false;
+                state.verifiedBizNo = '';
+                setBizVerifyMsg('사업자 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.', false);
+                setDuplBtnVisible(false);
+                updateJoinButton();
+            });
     }
 
     // 중복확인 메시지/DOM·전역 플래그로 성공 여부 판별
