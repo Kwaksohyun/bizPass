@@ -1,16 +1,16 @@
 -- Supabase SQL Editor에서 한 번 실행
 -- 다른 앱과 DB를 나누려면 스키마 이름만 바꾸고, .env 의 SUPABASE_APP_SCHEMA 와 동일하게 맞추세요.
 
-create schema if not exists cafe24_app;
+create schema if not exists bizPass;
 
-create table if not exists cafe24_app.oauth_states (
+create table if not exists bizPass.oauth_states (
   state text primary key,
   mall_id text not null,
   expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
 
-create table if not exists cafe24_app.shops (
+create table if not exists bizPass.shops (
   mall_id text primary key,
   access_token text,
   refresh_token text,
@@ -30,17 +30,18 @@ create table if not exists cafe24_app.shops (
   updated_at timestamptz
 );
 
-grant usage on schema cafe24_app to anon, authenticated, service_role;
-grant select on table cafe24_app.shops to anon, authenticated;
-grant all on table cafe24_app.shops to service_role;
-grant all on table cafe24_app.oauth_states to service_role;
+grant usage on schema bizPass to anon, authenticated, service_role;
+grant select on table bizPass.shops to anon, authenticated;
+grant all on table bizPass.shops to service_role;
+grant all on table bizPass.oauth_states to service_role;
 
-alter table cafe24_app.oauth_states enable row level security;
-alter table cafe24_app.shops enable row level security;
+alter table bizPass.oauth_states enable row level security;
+alter table bizPass.shops enable row level security;
 
 -- 클라이언트 getShopByMallId(anon)용 — 운영 시 mall 단위로 좁히는 것을 권장
 create policy "shops_select_anon"
-  on cafe24_app.shops
+  on bizPass
+.shops
   for select
   to anon
   using (true);
