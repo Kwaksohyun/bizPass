@@ -1,6 +1,13 @@
 
 (function () {
-    var state = { ntsVerified: false, duplVerified: false, verifiedBizNo: '' };
+    var state = {
+        ntsVerified: false,
+        duplVerified: false,
+        verifiedBizNo: '',
+        verifyPending: false,
+        verifySeq: 0,
+        verifyAbort: null
+    };
 
     // scripttag src(biz-auth-filter.js) 호스트 → API 베이스 URL (카페24 쇼핑몰 도메인과 다름)
     function getApiBase() {
@@ -39,12 +46,44 @@
         return parts.join('');
     }
 
-    // 사업자 확인 결과 메시지(#bizVerifyMsg) 문구·스타일 갱신
-    function setBizVerifyMsg(text, isOk) {
+    // 사업자 확인 메시지 — true:성공, false:실패, null:로딩(중립), 빈문자:초기화
+    function setBizVerifyMsg(text, status) {
         var el = document.getElementById('bizVerifyMsg');
         if (!el) return;
-        el.textContent = text;
-        el.className = 'biz-verify-msg gBlank5' + (text ? (isOk ? ' txtSuccess' : ' txtWarn') : '');
+        el.textContent = text || '';
+        var cls = 'biz-verify-msg gBlank5';
+        if (text) {
+            if (status === true) cls += ' txtSuccess';
+            else if (status === false) cls += ' txtWarn';
+            else if (status === null) cls += ' biz-verify-loading';
+        }
+        el.className = cls;
+    }
+
+    // 사업자 확인 버튼 로딩 중 비활성
+    function setVerifyBtnBusy(busy) {
+        var btn = document.getElementById('btnBizVerify');
+        if (!btn) return;
+        if (busy) {
+            btn.classList.add('biz-verify-busy');
+            btn.setAttribute('disabled', 'disabled');
+            btn.setAttribute('aria-busy', 'true');
+        } else {
+            btn.classList.remove('biz-verify-busy');
+            btn.removeAttribute('disabled');
+            btn.removeAttribute('aria-busy');
+        }
+    }
+
+    // 로딩/버튼 스타일 (카페24 테마에 없는 클래스용)
+    function injectVerifyStyles() {
+        if (document.getElementById('biz-verify-styles')) return;
+        var style = document.createElement('style');
+        style.id = 'biz-verify-styles';
+        style.textContent =
+            '#bizVerifyMsg.biz-verify-loading{color:#666;}' +
+            '#btnBizVerify.biz-verify-busy{opacity:.65;cursor:wait;}';
+        document.head.appendChild(style);
     }
 
     // 중복확인 버튼(#btnCssnDupl) 표시/숨김
@@ -64,12 +103,19 @@
         else btn.classList.add('biz-join-disabled');
     }
 
-    // 검증 상태·UI를 초기값으로 되돌림
+    // 검증 상태·UI를 초기값으로 되돌림 (진행 중 API 요청 취소)
     function resetFlow() {
+        if (state.verifyAbort) {
+            state.verifyAbort.abort();
+            state.verifyAbort = null;
+        }
+        state.verifySeq += 1;
+        state.verifyPending = false;
         state.ntsVerified = false;
         state.duplVerified = false;
         state.verifiedBizNo = '';
-        setBizVerifyMsg('', false);
+        setVerifyBtnBusy(false);
+        setBizVerifyMsg('', undefined);
         setDuplBtnVisible(false);
         var cssnMsg = document.querySelector('.cssn-dupl-msg');
         if (cssnMsg) cssnMsg.innerHTML = '';
@@ -78,6 +124,8 @@
 
     // 사업자번호 국세청 상태조회(b_stt_cd 01만 통과) 후 중복확인 단계로 진행
     function verifyBizNo() {
+        if (state.verifyPending) return;
+
         var cell = getBizNoCell();
         var bizNo = getBizNoValue(cell);
         if (!bizNo) {
@@ -95,32 +143,52 @@
             return;
         }
 
+        if (state.verifyAbort) {
+            state.verifyAbort.abort();
+        }
+        state.verifySeq += 1;
+        var seq = state.verifySeq;
+        state.verifyAbort =
+            typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var signal = state.verifyAbort ? state.verifyAbort.signal : undefined;
+
         state.duplVerified = false;
         state.ntsVerified = false;
         state.verifiedBizNo = '';
+        state.verifyPending = true;
         var cssnMsg = document.querySelector('.cssn-dupl-msg');
         if (cssnMsg) cssnMsg.innerHTML = '';
 
-        setBizVerifyMsg('사업자 확인 중...', false);
+        setVerifyBtnBusy(true);
+        setBizVerifyMsg('국세청에서 확인 중입니다…', null);
         setDuplBtnVisible(false);
         updateJoinButton();
 
         fetch(apiBase + '/api/biz/status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ b_no: bizNo })
+            body: JSON.stringify({ b_no: bizNo }),
+            signal: signal
         })
             .then(function (res) {
                 return res.json().then(function (data) {
-                    return { httpOk: res.ok, data: data };
+                    return { data: data };
                 });
             })
             .then(function (result) {
+                if (seq !== state.verifySeq) return;
+
+                state.verifyPending = false;
+                setVerifyBtnBusy(false);
+
                 var data = result.data;
                 if (data && data.ok) {
                     state.ntsVerified = true;
                     state.verifiedBizNo = bizNo;
-                    setBizVerifyMsg('사업자 확인이 완료되었습니다. 중복확인을 진행해 주세요.', true);
+                    setBizVerifyMsg(
+                        '사업자 확인이 완료되었습니다. 중복확인을 진행해 주세요.',
+                        true
+                    );
                     setDuplBtnVisible(true);
                 } else {
                     state.ntsVerified = false;
@@ -133,10 +201,18 @@
                 }
                 updateJoinButton();
             })
-            .catch(function () {
+            .catch(function (err) {
+                if (seq !== state.verifySeq) return;
+                if (err && err.name === 'AbortError') return;
+
+                state.verifyPending = false;
+                setVerifyBtnBusy(false);
                 state.ntsVerified = false;
                 state.verifiedBizNo = '';
-                setBizVerifyMsg('사업자 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.', false);
+                setBizVerifyMsg(
+                    '사업자 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+                    false
+                );
                 setDuplBtnVisible(false);
                 updateJoinButton();
             });
@@ -162,6 +238,7 @@
 
     // 중복확인 결과를 state에 반영하고 가입 버튼 상태 갱신
     function syncDuplState() {
+        if (state.verifyPending) return;
         if (!state.ntsVerified) return;
         var cell = getBizNoCell();
         if (getBizNoValue(cell) !== state.verifiedBizNo) {
@@ -175,6 +252,10 @@
 
     // 회원가입 submit 전 NTS·중복확인 완료 여부 검사(가드)
     window.bizJoinGuard = function () {
+        if (state.verifyPending) {
+            alert('사업자 확인이 진행 중입니다. 잠시만 기다려 주세요.');
+            return false;
+        }
         if (!state.ntsVerified) {
             alert('사업자 확인을 먼저 진행해 주세요.');
             return false;
@@ -213,6 +294,7 @@
 
     // 페이지 로드 시 UI·이벤트·폴링 초기화
     function init() {
+        injectVerifyStyles();
         setDuplBtnVisible(false);
         updateJoinButton();
         bindBizNoInputs();
