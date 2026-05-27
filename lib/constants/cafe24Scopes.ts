@@ -9,7 +9,6 @@ export const cafe24Scopes = [
   // 1. 앱(Application) — 읽기+쓰기
   "mall.read_application",
   "mall.write_application",
-  "mall.read_product",
 
   // 주의: mall.write_product와 mall.read_order는
   // Cafe24 개발자 센터에서 별도 승인이 필요합니다.
