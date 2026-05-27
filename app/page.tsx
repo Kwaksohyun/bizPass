@@ -11,6 +11,7 @@ function HomeContent() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [sessionCreating, setSessionCreating] = useState(false);
+  const [installingScriptTag, setInstallingScriptTag] = useState(false);
   const [shopStatus, setShopStatus] = useState<{
     enabled?: boolean;
   } | null>(null);
@@ -54,6 +55,37 @@ function HomeContent() {
     }
   }, [mall_id]);
 
+  const installMemberJoinScriptTag = async (mallId: string) => {
+    // 동일 mall에 대해 불필요한 중복 설치 호출을 방지합니다.
+    const storageKey = `cafe24_scripttag_installed_member_join:${mallId}`;
+    const alreadyInstalled =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem(storageKey) === "1";
+
+    if (alreadyInstalled) return;
+
+    setInstallingScriptTag(true);
+    try {
+      const res = await fetch(
+        `/api/cafe24/scripttags/install?mall_id=${encodeURIComponent(mallId)}`,
+        { method: "POST" },
+      );
+
+      // 실패해도 대시보드 진입 자체를 막지 않습니다.
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.warn("scripttag install failed:", { mallId, text });
+        return;
+      }
+
+      window.localStorage.setItem(storageKey, "1");
+    } catch (e) {
+      console.warn("scripttag install error:", e);
+    } finally {
+      setInstallingScriptTag(false);
+    }
+  };
+
   const createSessionFromCafe24 = async () => {
     try {
       setSessionCreating(true);
@@ -72,6 +104,7 @@ function HomeContent() {
       setShopStatus(shop);
 
       if (shop?.enabled && mall_id) {
+        await installMemberJoinScriptTag(mall_id);
         router.push(`/dashboard?mall_id=${mall_id}`);
         return;
       }
@@ -91,10 +124,16 @@ function HomeContent() {
     }
   };
 
-  if (loading || sessionCreating) {
+  if (loading || sessionCreating || installingScriptTag) {
     return (
       <FullPageLoader
-        label={sessionCreating ? "세션 생성 중..." : "로딩 중..."}
+        label={
+          sessionCreating
+            ? "세션 생성 중..."
+            : installingScriptTag
+              ? "scripttag 설치 중..."
+              : "로딩 중..."
+        }
       />
     );
   }
