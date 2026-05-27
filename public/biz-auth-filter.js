@@ -3,15 +3,18 @@
     var MOCK_PASS_BIZ_NO = '1234512345';
     var state = { ntsVerified: false, duplVerified: false, verifiedBizNo: '' };
 
+    // 사업자번호 입력 영역(.biz-no-cell) DOM 요소를 반환
     function getBizNoCell() {
         return document.querySelector('.biz-no-cell');
     }
 
+    // 사업자번호 입력란 input 목록을 반환
     function getBizNoInputs(cell) {
         if (!cell) return [];
         return cell.querySelectorAll('input');
     }
 
+    // 분리된 input 값을 합쳐 숫자만 있는 사업자번호 문자열로 반환
     function getBizNoValue(cell) {
         var inputs = getBizNoInputs(cell);
         if (!inputs.length) return '';
@@ -22,6 +25,7 @@
         return parts.join('');
     }
 
+    // 사업자 확인 결과 메시지(#bizVerifyMsg) 문구·스타일 갱신
     function setBizVerifyMsg(text, isOk) {
         var el = document.getElementById('bizVerifyMsg');
         if (!el) return;
@@ -29,6 +33,7 @@
         el.className = 'biz-verify-msg gBlank5' + (text ? (isOk ? ' txtSuccess' : ' txtWarn') : '');
     }
 
+    // 중복확인 버튼(#btnCssnDupl) 표시/숨김
     function setDuplBtnVisible(show) {
         var btn = document.getElementById('btnCssnDupl');
         if (!btn) return;
@@ -36,6 +41,7 @@
         else btn.classList.add('displaynone');
     }
 
+    // NTS·중복확인 완료 여부에 따라 회원가입 버튼 활성/비활성
     function updateJoinButton() {
         var btn = document.getElementById('btnMemberJoin');
         if (!btn) return;
@@ -44,6 +50,7 @@
         else btn.classList.add('biz-join-disabled');
     }
 
+    // 검증 상태·UI를 초기값으로 되돌림
     function resetFlow() {
         state.ntsVerified = false;
         state.duplVerified = false;
@@ -55,6 +62,7 @@
         updateJoinButton();
     }
 
+    // 사업자번호 NTS 확인(목업) 후 중복확인 단계로 진행
     function verifyBizNo() {
         var cell = getBizNoCell();
         var bizNo = getBizNoValue(cell);
@@ -81,6 +89,7 @@
         updateJoinButton();
     }
 
+    // 중복확인 메시지/DOM·전역 플래그로 성공 여부 판별
     function isDuplCheckSuccess(msgEl) {
         if (!msgEl) return false;
         if (typeof window.bCheckDuplCssn !== 'undefined' && window.bCheckDuplCssn === true) return true;
@@ -98,6 +107,7 @@
         return false;
     }
 
+    // 중복확인 결과를 state에 반영하고 가입 버튼 상태 갱신
     function syncDuplState() {
         if (!state.ntsVerified) return;
         var cell = getBizNoCell();
@@ -110,6 +120,7 @@
         updateJoinButton();
     }
 
+    // 회원가입 submit 전 NTS·중복확인 완료 여부 검사(가드)
     window.bizJoinGuard = function () {
         if (!state.ntsVerified) {
             alert('사업자 확인을 먼저 진행해 주세요.');
@@ -122,6 +133,7 @@
         return true;
     };
 
+    // 사업자번호 input 변경 시 검증 상태 초기화 이벤트 연결
     function bindBizNoInputs() {
         var cell = getBizNoCell();
         var inputs = getBizNoInputs(cell);
@@ -135,6 +147,7 @@
         }
     }
 
+    // 중복확인 메시지 영역 DOM 변경 감시
     function watchDuplMsg() {
         var msgEl = document.querySelector('.cssn-dupl-msg');
         if (!msgEl || typeof MutationObserver === 'undefined') return;
@@ -145,6 +158,7 @@
         });
     }
 
+    // 페이지 로드 시 UI·이벤트·폴링 초기화
     function init() {
         setDuplBtnVisible(false);
         updateJoinButton();
