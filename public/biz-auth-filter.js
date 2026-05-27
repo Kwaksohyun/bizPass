@@ -1,12 +1,16 @@
 
 (function () {
+    // 배포 후 콘솔에서 버전 확인 (카페24 scripttag 캐시 여부 점검용)
+    window.__bizAuthFilterVersion = '2026-05-27-loading-v2';
+
     var state = {
         ntsVerified: false,
         duplVerified: false,
         verifiedBizNo: '',
         verifyPending: false,
         verifySeq: 0,
-        verifyAbort: null
+        verifyAbort: null,
+        verifyBtnLabel: ''
     };
 
     // scripttag src(biz-auth-filter.js) 호스트 → API 베이스 URL (카페24 쇼핑몰 도메인과 다름)
@@ -50,40 +54,110 @@
     function setBizVerifyMsg(text, status) {
         var el = document.getElementById('bizVerifyMsg');
         if (!el) return;
+
+        if (status === null) {
+            el.className = 'biz-verify-msg gBlank5 biz-verify-loading';
+            el.innerHTML =
+                '<span class="biz-verify-loading-inner">' +
+                '⏳ ' + (text || '국세청에서 확인 중입니다…') +
+                '</span>';
+            return;
+        }
+
+        el.innerHTML = '';
         el.textContent = text || '';
         var cls = 'biz-verify-msg gBlank5';
         if (text) {
             if (status === true) cls += ' txtSuccess';
             else if (status === false) cls += ' txtWarn';
-            else if (status === null) cls += ' biz-verify-loading';
         }
         el.className = cls;
     }
 
-    // 사업자 확인 버튼 로딩 중 비활성
-    function setVerifyBtnBusy(busy) {
+    // 사업자번호 입력란·확인 버튼 로딩 중 비활성
+    function setVerifyUiLocked(locked) {
         var btn = document.getElementById('btnBizVerify');
-        if (!btn) return;
-        if (busy) {
-            btn.classList.add('biz-verify-busy');
-            btn.setAttribute('disabled', 'disabled');
-            btn.setAttribute('aria-busy', 'true');
-        } else {
-            btn.classList.remove('biz-verify-busy');
-            btn.removeAttribute('disabled');
-            btn.removeAttribute('aria-busy');
+        if (btn) {
+            if (locked) {
+                if (!state.verifyBtnLabel) {
+                    state.verifyBtnLabel =
+                        (btn.textContent || btn.innerText || '').trim() || '사업자 확인';
+                }
+                btn.classList.add('biz-verify-busy');
+                btn.setAttribute('disabled', 'disabled');
+                btn.setAttribute('aria-busy', 'true');
+                btn.textContent = '확인 중…';
+            } else {
+                btn.classList.remove('biz-verify-busy');
+                btn.removeAttribute('disabled');
+                btn.removeAttribute('aria-busy');
+                if (state.verifyBtnLabel) btn.textContent = state.verifyBtnLabel;
+            }
+        }
+
+        var cell = getBizNoCell();
+        var inputs = getBizNoInputs(cell);
+        for (var i = 0; i < inputs.length; i++) {
+            inputs[i].disabled = !!locked;
         }
     }
 
-    // 로딩/버튼 스타일 (카페24 테마에 없는 클래스용)
+    // 로딩/버튼 스타일 (!important — 카페24 txtWarn 덮어쓰기 방지)
     function injectVerifyStyles() {
         if (document.getElementById('biz-verify-styles')) return;
         var style = document.createElement('style');
         style.id = 'biz-verify-styles';
         style.textContent =
-            '#bizVerifyMsg.biz-verify-loading{color:#666;}' +
-            '#btnBizVerify.biz-verify-busy{opacity:.65;cursor:wait;}';
+            '#bizVerifyMsg.biz-verify-loading{' +
+            'color:#333 !important;background:#f0f4f8 !important;' +
+            'border:1px solid #c5d3e0 !important;padding:10px 12px !important;' +
+            'border-radius:4px !important;display:block !important;}' +
+            '#bizVerifyMsg.biz-verify-loading .biz-verify-loading-inner{' +
+            'color:#333 !important;font-weight:normal !important;}' +
+            '#bizVerifyMsg.txtWarn.biz-verify-loading,#bizVerifyMsg.txtSuccess.biz-verify-loading{' +
+            'color:#333 !important;background:#f0f4f8 !important;}' +
+            '#btnBizVerify.biz-verify-busy{opacity:.7 !important;cursor:wait !important;}' +
+            '.biz-no-cell input:disabled{background:#f5f5f5 !important;}';
         document.head.appendChild(style);
+    }
+
+    // API 응답 후 UI 반영 (늦게 온 응답은 무시)
+    function applyVerifyResult(seq, bizNo, data) {
+        if (seq !== state.verifySeq) return;
+
+        state.verifyPending = false;
+        setVerifyUiLocked(false);
+
+        if (data && data.ok) {
+            state.ntsVerified = true;
+            state.verifiedBizNo = bizNo;
+            setBizVerifyMsg(
+                '사업자 확인이 완료되었습니다. 중복확인을 진행해 주세요.',
+                true
+            );
+            setDuplBtnVisible(true);
+        } else {
+            state.ntsVerified = false;
+            state.verifiedBizNo = '';
+            setBizVerifyMsg(
+                (data && data.message) || '유효하지 않은 사업자번호입니다.',
+                false
+            );
+            setDuplBtnVisible(false);
+        }
+        updateJoinButton();
+    }
+
+    function applyVerifyError(seq, message) {
+        if (seq !== state.verifySeq) return;
+
+        state.verifyPending = false;
+        setVerifyUiLocked(false);
+        state.ntsVerified = false;
+        state.verifiedBizNo = '';
+        setBizVerifyMsg(message, false);
+        setDuplBtnVisible(false);
+        updateJoinButton();
     }
 
     // 중복확인 버튼(#btnCssnDupl) 표시/숨김
@@ -105,16 +179,18 @@
 
     // 검증 상태·UI를 초기값으로 되돌림 (진행 중 API 요청 취소)
     function resetFlow() {
-        if (state.verifyAbort) {
-            state.verifyAbort.abort();
-            state.verifyAbort = null;
+        if (state.verifyPending) {
+            if (state.verifyAbort) {
+                state.verifyAbort.abort();
+                state.verifyAbort = null;
+            }
+            state.verifySeq += 1;
+            state.verifyPending = false;
+            setVerifyUiLocked(false);
         }
-        state.verifySeq += 1;
-        state.verifyPending = false;
         state.ntsVerified = false;
         state.duplVerified = false;
         state.verifiedBizNo = '';
-        setVerifyBtnBusy(false);
         setBizVerifyMsg('', undefined);
         setDuplBtnVisible(false);
         var cssnMsg = document.querySelector('.cssn-dupl-msg');
@@ -143,9 +219,8 @@
             return;
         }
 
-        if (state.verifyAbort) {
-            state.verifyAbort.abort();
-        }
+        // 즉시 잠금 — 응답 오기 전 실패 메시지·중복 클릭 방지
+        if (state.verifyAbort) state.verifyAbort.abort();
         state.verifySeq += 1;
         var seq = state.verifySeq;
         state.verifyAbort =
@@ -156,19 +231,20 @@
         state.ntsVerified = false;
         state.verifiedBizNo = '';
         state.verifyPending = true;
+
         var cssnMsg = document.querySelector('.cssn-dupl-msg');
         if (cssnMsg) cssnMsg.innerHTML = '';
 
-        setVerifyBtnBusy(true);
-        setBizVerifyMsg('국세청에서 확인 중입니다…', null);
         setDuplBtnVisible(false);
-        updateJoinButton();
+        setVerifyUiLocked(true);
+        setBizVerifyMsg('국세청에서 확인 중입니다. 잠시만 기다려 주세요.', null);
 
         fetch(apiBase + '/api/biz/status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ b_no: bizNo }),
-            signal: signal
+            signal: signal,
+            cache: 'no-store'
         })
             .then(function (res) {
                 return res.json().then(function (data) {
@@ -176,45 +252,15 @@
                 });
             })
             .then(function (result) {
-                if (seq !== state.verifySeq) return;
-
-                state.verifyPending = false;
-                setVerifyBtnBusy(false);
-
-                var data = result.data;
-                if (data && data.ok) {
-                    state.ntsVerified = true;
-                    state.verifiedBizNo = bizNo;
-                    setBizVerifyMsg(
-                        '사업자 확인이 완료되었습니다. 중복확인을 진행해 주세요.',
-                        true
-                    );
-                    setDuplBtnVisible(true);
-                } else {
-                    state.ntsVerified = false;
-                    state.verifiedBizNo = '';
-                    setBizVerifyMsg(
-                        (data && data.message) || '유효하지 않은 사업자번호입니다.',
-                        false
-                    );
-                    setDuplBtnVisible(false);
-                }
-                updateJoinButton();
+                applyVerifyResult(seq, bizNo, result.data);
             })
             .catch(function (err) {
                 if (seq !== state.verifySeq) return;
                 if (err && err.name === 'AbortError') return;
-
-                state.verifyPending = false;
-                setVerifyBtnBusy(false);
-                state.ntsVerified = false;
-                state.verifiedBizNo = '';
-                setBizVerifyMsg(
-                    '사업자 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.',
-                    false
+                applyVerifyError(
+                    seq,
+                    '사업자 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.'
                 );
-                setDuplBtnVisible(false);
-                updateJoinButton();
             });
     }
 
@@ -273,9 +319,11 @@
         var inputs = getBizNoInputs(cell);
         for (var i = 0; i < inputs.length; i++) {
             inputs[i].addEventListener('input', function () {
+                if (state.verifyPending) return;
                 if (getBizNoValue(cell) !== state.verifiedBizNo) resetFlow();
             });
             inputs[i].addEventListener('change', function () {
+                if (state.verifyPending) return;
                 if (getBizNoValue(cell) !== state.verifiedBizNo) resetFlow();
             });
         }
