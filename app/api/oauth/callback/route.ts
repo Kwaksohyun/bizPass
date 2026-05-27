@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ensureScriptTagInstalled } from "@/lib/cafe24/scripttags";
 import { oauthStatesTable } from "@/lib/db";
 import { saveShopFromOAuth } from "@/lib/shops/saveShop";
 import { logger } from "@/lib/utils/logger";
@@ -91,6 +92,12 @@ export async function GET(req: NextRequest) {
         { status: 500 },
       );
     }
+
+    await ensureScriptTagInstalled(
+      saveResult.mall_id,
+      token.access_token,
+      token.shop_no || "1",
+    );
 
     const { createSession, setSessionCookie } =
       await import("@/lib/auth/session");
