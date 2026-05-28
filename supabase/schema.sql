@@ -47,7 +47,7 @@ create policy "shops_select_anon"
   using (true);
 
 -- 회원가입 제출 1건 = 1행 (사업자등록증 URL + 통장사본 URL)
-create table if not exists bizPass.member_documents (
+create table bizPass.member_documents (
   id uuid primary key default gen_random_uuid(),
   upload_session_id text not null,
   mall_id text not null,
