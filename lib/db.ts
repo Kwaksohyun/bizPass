@@ -32,3 +32,7 @@ export function shopsTable(client: SupabaseClient = supabaseAdmin) {
 export function oauthStatesTable(client: SupabaseClient = supabaseAdmin) {
   return client.schema(APP_SCHEMA).from("oauth_states");
 }
+
+export function memberDocumentsTable(client: SupabaseClient = supabaseAdmin) {
+  return client.schema(APP_SCHEMA).from("member_documents");
+}

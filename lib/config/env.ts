@@ -50,4 +50,9 @@ export const config = {
   nts: {
     serviceKey: process.env.DATA_GO_KR_SERVICE_KEY || "",
   },
+  /** 회원가입 첨부파일 Storage 버킷 (public) */
+  storage: {
+    memberDocsBucket:
+      process.env.SUPABASE_MEMBER_DOCS_BUCKET || "bizpass-member-docs",
+  },
 };
