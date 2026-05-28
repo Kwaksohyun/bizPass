@@ -195,10 +195,7 @@ export async function uploadMemberDocument(
 
     if (updateError || !updated) {
       await removeStoragePath(storagePath);
-      return {
-        ok: false,
-        message: `문서 정보 저장에 실패했습니다. ${updateError?.message ?? ""}`.trim(),
-      };
+      return { ok: false, message: "문서 정보 저장에 실패했습니다." };
     }
 
     rowId = updated.id;
@@ -237,10 +234,7 @@ export async function uploadMemberDocument(
 
   if (insertError || !inserted) {
     await removeStoragePath(storagePath);
-    return {
-      ok: false,
-      message: `문서 정보 저장에 실패했습니다. ${insertError?.message ?? ""}`.trim(),
-    };
+    return { ok: false, message: "문서 정보 저장에 실패했습니다." };
   }
 
   return {
