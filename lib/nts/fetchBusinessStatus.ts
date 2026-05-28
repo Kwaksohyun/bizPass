@@ -20,6 +20,42 @@ interface NtsStatusResponse {
   data?: NtsStatusRow[];
 }
 
+interface NtsErrorBody {
+  code?: number;
+  msg?: string;
+}
+
+/** 공공데이터 API 오류 code → 사용자 메시지 */
+function mapNtsApiError(body: NtsErrorBody | null, httpStatus: number): string {
+  const code = body?.code;
+  const msg = body?.msg?.trim();
+
+  if (code === -4) {
+    return "사업자 확인 API 인증키가 등록되지 않았습니다. 공공데이터포털 활용신청·Vercel 환경변수를 확인해 주세요.";
+  }
+  if (code === -5) {
+    return "국세청 사업자 확인 API에 연결할 수 없습니다. 인증키(인코딩/디코딩)·활용승인 상태를 확인해 주세요.";
+  }
+  if (msg) return msg;
+
+  if (httpStatus >= 500) {
+    return "사업자 확인 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요.";
+  }
+  if (httpStatus >= 400) {
+    return "사업자 확인 API 요청이 거부되었습니다. 인증키 설정을 확인해 주세요.";
+  }
+
+  return "사업자 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+}
+
+async function parseNtsErrorBody(res: Response): Promise<NtsErrorBody | null> {
+  try {
+    return (await res.json()) as NtsErrorBody;
+  } catch {
+    return null;
+  }
+}
+
 /** 사업자등록번호 10자리 숫자만 허용 */
 export function normalizeBizNo(value: string): string | null {
   const digits = value.replace(/\D/g, "");
@@ -61,7 +97,8 @@ export async function fetchBusinessStatus(
   }
 
   if (res.status >= 400) {
-    return { ok: false, message: "유효하지 않은 사업자번호입니다." };
+    const errBody = await parseNtsErrorBody(res);
+    return { ok: false, message: mapNtsApiError(errBody, res.status) };
   }
 
   let body: NtsStatusResponse;
@@ -85,6 +122,14 @@ export async function fetchBusinessStatus(
 
   const bSttCd = row.b_stt_cd ?? "";
   const bStt = row.b_stt ?? "";
+
+  // 국세청이 200으로 주지만 b_stt에 미등록 안내가 오는 경우
+  if (
+    !bSttCd &&
+    /등록되지\s*않|유효하지\s*않|존재하지/.test(bStt)
+  ) {
+    return { ok: false, message: bStt || "유효하지 않은 사업자번호입니다." };
+  }
 
   if (bSttCd === "01") {
     return { ok: true, bSttCd: "01", bStt };
