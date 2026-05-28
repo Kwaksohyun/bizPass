@@ -47,6 +47,8 @@ create policy "shops_select_anon"
   using (true);
 
 -- 회원가입 제출 1건 = 1행 (사업자등록증 URL + 통장사본 URL)
+-- 기존 member_documents를 지우고 새로 만들 때 아래 1줄을 먼저 실행하세요.
+-- drop table if exists bizPass.member_documents;
 create table if not exists bizPass.member_documents (
   id uuid primary key default gen_random_uuid(),
   upload_session_id text not null,

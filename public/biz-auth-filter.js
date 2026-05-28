@@ -401,7 +401,7 @@
             'display:none !important;}' +
             '.biz-file-uploads{margin:12px 0;}' +
             '.biz-file-row th{vertical-align:middle;}' +
-            '.biz-file-row .biz-file-required{color:#d32f2f;margin-left:4px;font-size:12px;}' +
+            '.biz-file-row .biz-file-required{color:#0a5ca8;margin-left:4px;font-size:12px;}' +
             '.biz-file-cell{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}' +
             '.biz-file-btn{display:inline-block;padding:8px 14px;border:1px solid #ccc;' +
             'background:#fafafa;border-radius:4px;cursor:pointer;font-size:13px;}' +
