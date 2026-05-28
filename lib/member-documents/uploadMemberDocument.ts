@@ -174,78 +174,43 @@ export async function uploadMemberDocument(
     [fields.key]: documentKey,
   };
 
-  let rowId: string;
-
-  if (existing?.id) {
-    const oldPath =
-      documentType === "business_reg"
-        ? (existing.business_reg_storage_path as string | null)
-        : (existing.bank_copy_storage_path as string | null);
-    if (oldPath && oldPath !== storagePath) {
-      await removeStoragePath(oldPath);
-    }
-
-    const { data: updated, error: updateError } = await memberDocumentsTable()
-      .update(patch)
-      .eq("id", existing.id)
-      .select(
-        "id, business_reg_public_url, bank_copy_public_url, business_reg_key, bank_copy_key",
-      )
-      .single();
-
-    if (updateError || !updated) {
-      await removeStoragePath(storagePath);
-      return { ok: false, message: "문서 정보 저장에 실패했습니다." };
-    }
-
-    rowId = updated.id;
-    return {
-      ok: true,
-      id: rowId,
-      public_url: publicUrl,
-      document_type: documentType,
-      business_reg_url: updated.business_reg_public_url ?? null,
-      bank_copy_url: updated.bank_copy_public_url ?? null,
-      business_reg_key: updated.business_reg_key ?? null,
-      bank_copy_key: updated.bank_copy_key ?? null,
-    };
-  }
-
-  const insertRow: Record<string, string | number | null> = {
+  const upsertRow: Record<string, string | number | null> = {
     upload_session_id: uploadSessionId,
     mall_id: mallId,
     biz_no: bizNo ?? null,
     status: "pending",
-    updated_at: now,
-    [fields.storage_path]: storagePath,
-    [fields.public_url]: publicUrl,
-    [fields.file_name]: fileName,
-    [fields.file_size]: file.length,
-    [fields.mime_type]: mimeType,
-    [fields.key]: documentKey,
+    ...patch,
   };
 
-  const { data: inserted, error: insertError } = await memberDocumentsTable()
-    .insert(insertRow)
+  const { data: saved, error: saveError } = await memberDocumentsTable()
+    .upsert(upsertRow, { onConflict: "upload_session_id,mall_id" })
     .select(
       "id, business_reg_public_url, bank_copy_public_url, business_reg_key, bank_copy_key",
     )
     .single();
 
-  if (insertError || !inserted) {
+  if (saveError || !saved) {
     await removeStoragePath(storagePath);
     return { ok: false, message: "문서 정보 저장에 실패했습니다." };
   }
 
+  const oldPath =
+    documentType === "business_reg"
+      ? (existing?.business_reg_storage_path as string | null)
+      : (existing?.bank_copy_storage_path as string | null);
+  if (oldPath && oldPath !== storagePath) {
+    await removeStoragePath(oldPath);
+  }
+
   return {
     ok: true,
-    id: inserted.id,
+    id: saved.id,
     public_url: publicUrl,
     document_type: documentType,
-    business_reg_url: inserted.business_reg_public_url ?? null,
-    bank_copy_url: inserted.bank_copy_public_url ?? null,
-    business_reg_key: inserted.business_reg_key ?? null,
-    bank_copy_key: inserted.bank_copy_key ?? null,
+    business_reg_url: saved.business_reg_public_url ?? null,
+    bank_copy_url: saved.bank_copy_public_url ?? null,
+    business_reg_key: saved.business_reg_key ?? null,
+    bank_copy_key: saved.bank_copy_key ?? null,
   };
 }
 
