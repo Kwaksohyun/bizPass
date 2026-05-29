@@ -93,6 +93,131 @@ export async function installScriptTag(
   return { ok: true, scripttag: res.data.scripttag };
 }
 
+/** 배포된 JS 기준 integrity(SHA-384)로 scripttag 갱신 */
+export async function updateScriptTag(
+  mallId: string,
+  accessToken: string,
+  scriptNo: string,
+  shopNo: number | string = 1,
+): Promise<
+  | { ok: true; scripttag: Cafe24ScriptTag }
+  | { ok: false; error: string; status?: number }
+> {
+  const res = await callCafe24Api<{ scripttag: Cafe24ScriptTag }>({
+    mallId,
+    endpoint: `admin/scripttags/${scriptNo}`,
+    method: "PUT",
+    accessToken,
+    body: await buildScriptTagPayload(shopNo),
+  });
+
+  if (!res.success) {
+    return {
+      ok: false,
+      error: res.error ?? "scripttag 갱신 실패",
+      status: res.status,
+    };
+  }
+
+  if (!res.data?.scripttag) {
+    return { ok: false, error: "응답에 scripttag가 없습니다." };
+  }
+
+  return { ok: true, scripttag: res.data.scripttag };
+}
+
+export async function getCurrentScriptIntegrity(): Promise<string> {
+  return getScriptTagIntegrity();
+}
+
+export function needsIntegritySync(
+  installed: Cafe24ScriptTag | null | undefined,
+  currentIntegrity: string,
+): boolean {
+  if (!installed) return false;
+  const registered = installed.integrity;
+  if (typeof registered !== "string" || !registered) return true;
+  return registered !== currentIntegrity;
+}
+
+export async function deleteScriptTag(
+  mallId: string,
+  accessToken: string,
+  scriptNo: string,
+): Promise<{ ok: true } | { ok: false; error: string; status?: number }> {
+  const res = await callCafe24Api({
+    mallId,
+    endpoint: `admin/scripttags/${scriptNo}`,
+    method: "DELETE",
+    accessToken,
+  });
+
+  if (!res.success) {
+    return {
+      ok: false,
+      error: res.error ?? "scripttag 삭제 실패",
+      status: res.status,
+    };
+  }
+
+  return { ok: true };
+}
+
+/** 설치되어 있으면 integrity 갱신, 없으면 신규 설치 */
+export async function syncScriptTag(
+  mallId: string,
+  accessToken: string,
+  shopNo: number | string = 1,
+): Promise<
+  | {
+      ok: true;
+      scripttag: Cafe24ScriptTag;
+      action: "installed" | "updated" | "unchanged";
+    }
+  | { ok: false; error: string; status?: number }
+> {
+  const listed = await listScriptTags(mallId, accessToken);
+  if (!listed.ok) {
+    return {
+      ok: false,
+      error: listed.error,
+      status: listed.status,
+    };
+  }
+
+  const installed = findInstalledBySrc(listed.ours);
+  if (installed?.script_no) {
+    const scriptNo = String(installed.script_no);
+    const currentIntegrity = await getCurrentScriptIntegrity();
+
+    if (!needsIntegritySync(installed, currentIntegrity)) {
+      return { ok: true, scripttag: installed, action: "unchanged" };
+    }
+
+    const updated = await updateScriptTag(
+      mallId,
+      accessToken,
+      scriptNo,
+      shopNo,
+    );
+    if (updated.ok) {
+      return { ok: true, scripttag: updated.scripttag, action: "updated" };
+    }
+
+    // 앱 삭제·재설치 등으로 script_no가 무효한 경우 삭제 후 재등록
+    const removed = await deleteScriptTag(mallId, accessToken, scriptNo);
+    if (!removed.ok) return updated;
+
+    const recreated = await installScriptTag(mallId, accessToken, shopNo);
+    if (!recreated.ok) return recreated;
+    return { ok: true, scripttag: recreated.scripttag, action: "installed" };
+  }
+
+  const created = await installScriptTag(mallId, accessToken, shopNo);
+  if (!created.ok) return created;
+  return { ok: true, scripttag: created.scripttag, action: "installed" };
+}
+
 export function findInstalledBySrc(
   tags: Cafe24ScriptTag[],
   src = getScriptTagSrc(),
@@ -106,11 +231,8 @@ export async function ensureScriptTagInstalled(
   accessToken: string,
   shopNo: string = "1",
 ): Promise<void> {
-  const existing = await listScriptTags(mallId, accessToken);
-  if (existing.ok && findInstalledBySrc(existing.ours)) return;
-
-  const result = await installScriptTag(mallId, accessToken, shopNo);
+  const result = await syncScriptTag(mallId, accessToken, shopNo);
   if (!result.ok) {
-    logger.warn("scripttag 설치 실패", { mallId, error: result.error });
+    logger.warn("scripttag 동기화 실패", { mallId, error: result.error });
   }
 }

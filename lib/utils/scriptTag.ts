@@ -6,6 +6,7 @@ export interface Cafe24ScriptTag {
   src?: string;
   display_location?: string[];
   client_id?: string;
+  integrity?: string;
   [key: string]: unknown;
 }
 

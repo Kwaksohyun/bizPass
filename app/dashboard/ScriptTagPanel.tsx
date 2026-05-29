@@ -11,6 +11,8 @@ export type ScriptTagPanelInitial = {
   display_location: readonly string[];
   installed: boolean;
   scripttag: Cafe24ScriptTag | null;
+  autoSyncMessage?: string | null;
+  autoSyncError?: string | null;
   fetchError?: string;
 };
 
@@ -19,10 +21,9 @@ type ScriptTagApiResponse = {
   display_location?: string[];
   installed?: boolean;
   scripttag?: Cafe24ScriptTag | null;
+  message?: string | null;
   error?: string;
-  message?: string;
   success?: boolean;
-  alreadyInstalled?: boolean;
 };
 
 type Props = {
@@ -40,8 +41,12 @@ export function ScriptTagPanel({
 }: Props) {
   const [status, setStatus] = useState<ScriptTagPanelInitial | null>(initial);
   const [loading, setLoading] = useState(false);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(
+    initial?.autoSyncMessage ?? null,
+  );
+  const [actionError, setActionError] = useState<string | null>(
+    initial?.autoSyncError ?? initial?.fetchError ?? null,
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -63,6 +68,12 @@ export function ScriptTagPanel({
         installed: !!data.installed,
         scripttag: data.scripttag ?? null,
       });
+      if (data.message) {
+        setActionMessage(data.message);
+      }
+      if (data.error) {
+        setActionError(data.error);
+      }
     } catch {
       setActionError("상태 조회 중 네트워크 오류가 발생했습니다.");
     } finally {
@@ -109,7 +120,8 @@ export function ScriptTagPanel({
           회원가입 scripttag
         </h2>
         <p className={styles.sectionLead}>
-          토큰 재연동 후 scripttag 상태를 확인하고 설치할 수 있습니다.
+          앱 재연동(OAuth) 시 scripttag가 자동 등록·갱신됩니다. 토큰 재연동 후
+          대시보드에서 상태를 확인하세요.
         </p>
       </section>
     );
@@ -140,11 +152,12 @@ export function ScriptTagPanel({
       </h2>
       <p className={styles.sectionLead}>
         <code className={styles.mono}>biz-auth-filter.js</code>를 카페24
-        회원가입 페이지에 자동 삽입합니다. join.html에{" "}
+        회원가입 페이지에 자동 삽입합니다. OAuth 재연동·대시보드 접속 시
+        scripttag가 자동으로 설치·갱신됩니다. join.html에{" "}
         <code className={styles.mono}>&lt;script&gt;</code>를 넣지 마세요.
       </p>
 
-      {status?.fetchError && (
+      {status?.fetchError && !actionError && (
         <p className={styles.scriptTagError} role="alert">
           초기 조회 실패: {status.fetchError}
         </p>

@@ -5,6 +5,7 @@ import {
   getScriptTagSrc,
   listScriptTags,
   SCRIPT_TAG_DISPLAY_LOCATIONS,
+  syncScriptTag,
 } from "@/lib/cafe24/scripttags";
 import { shopsTable } from "@/lib/db";
 
@@ -48,22 +49,33 @@ export default async function DashboardPage({
   let scriptTagInitial: ScriptTagPanelInitial | null = null;
 
   if (tokenOk) {
-    const tagResult = await listScriptTags(mallId, tokenStatus);
-    if (tagResult.ok) {
-      const installed = findInstalledBySrc(tagResult.ours);
+    const shopNo = shop?.shop_no ?? "1";
+    const syncResult = await syncScriptTag(mallId, tokenStatus, shopNo);
+
+    if (syncResult.ok) {
+      scriptTagInitial = {
+        src: getScriptTagSrc(),
+        display_location: SCRIPT_TAG_DISPLAY_LOCATIONS,
+        installed: true,
+        scripttag: syncResult.scripttag,
+        autoSyncMessage:
+          syncResult.action === "updated"
+            ? "scripttag integrity가 배포본 기준으로 자동 갱신되었습니다."
+            : syncResult.action === "installed"
+              ? "scripttag가 자동 설치되었습니다."
+              : null,
+      };
+    } else {
+      const tagResult = await listScriptTags(mallId, tokenStatus);
+      const installed =
+        tagResult.ok ? findInstalledBySrc(tagResult.ours) : undefined;
       scriptTagInitial = {
         src: getScriptTagSrc(),
         display_location: SCRIPT_TAG_DISPLAY_LOCATIONS,
         installed: !!installed,
         scripttag: installed ?? null,
-      };
-    } else {
-      scriptTagInitial = {
-        src: getScriptTagSrc(),
-        display_location: SCRIPT_TAG_DISPLAY_LOCATIONS,
-        installed: false,
-        scripttag: null,
-        fetchError: tagResult.error,
+        fetchError: tagResult.ok ? undefined : tagResult.error,
+        autoSyncError: syncResult.error,
       };
     }
   }

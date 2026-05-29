@@ -4,9 +4,9 @@ import { requireMallSession } from "@/lib/api/routeAuth";
 import {
   findInstalledBySrc,
   getScriptTagSrc,
-  installScriptTag,
   listScriptTags,
   SCRIPT_TAG_DISPLAY_LOCATIONS,
+  syncScriptTag,
 } from "@/lib/cafe24/scripttags";
 import { shopsTable } from "@/lib/db";
 
@@ -18,7 +18,7 @@ async function resolveShopNo(mallId: string): Promise<string> {
   return data?.shop_no ?? "1";
 }
 
-/** GET — 우리 앱이 등록한 scripttag 목록 */
+/** GET — scripttag 상태 조회 및 integrity 자동 동기화 */
 export async function GET(req: NextRequest) {
   const mall_id = req.nextUrl.searchParams.get("mall_id");
   const authError = await requireMallSession(req, mall_id);
@@ -32,10 +32,29 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const shopNo = await resolveShopNo(mall_id!);
+  const syncResult = await syncScriptTag(mall_id!, token, shopNo);
+
+  if (syncResult.ok) {
+    return NextResponse.json({
+      src: getScriptTagSrc(),
+      display_location: SCRIPT_TAG_DISPLAY_LOCATIONS,
+      installed: true,
+      scripttag: syncResult.scripttag,
+      sync_action: syncResult.action,
+      message:
+        syncResult.action === "updated"
+          ? "scripttag integrity가 배포본 기준으로 자동 갱신되었습니다."
+          : syncResult.action === "installed"
+            ? "scripttag가 자동 설치되었습니다."
+            : null,
+    });
+  }
+
   const result = await listScriptTags(mall_id!, token);
   if (!result.ok) {
     return NextResponse.json(
-      { error: result.error, status: result.status },
+      { error: syncResult.error ?? result.error, status: result.status },
       { status: result.status ?? 502 },
     );
   }
@@ -48,6 +67,7 @@ export async function GET(req: NextRequest) {
     installed: !!installed,
     scripttag: installed ?? null,
     scripttags: result.ours,
+    error: syncResult.error,
   });
 }
 
@@ -65,21 +85,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const existing = await listScriptTags(mall_id!, token);
-  if (existing.ok) {
-    const already = findInstalledBySrc(existing.ours);
-    if (already) {
-      return NextResponse.json({
-        success: true,
-        alreadyInstalled: true,
-        scripttag: already,
-        message: "이미 설치된 scripttag입니다.",
-      });
-    }
-  }
-
   const shopNo = await resolveShopNo(mall_id!);
-  const result = await installScriptTag(mall_id!, token, shopNo);
+  const result = await syncScriptTag(mall_id!, token, shopNo);
 
   if (!result.ok) {
     return NextResponse.json(
@@ -90,8 +97,14 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    alreadyInstalled: false,
+    action: result.action,
+    alreadyInstalled: result.action !== "installed",
     scripttag: result.scripttag,
-    message: "scripttag 설치가 완료되었습니다.",
+    message:
+      result.action === "installed"
+        ? "scripttag 설치가 완료되었습니다."
+        : result.action === "updated"
+          ? "scripttag integrity가 배포본 기준으로 갱신되었습니다."
+          : "scripttag가 이미 최신 배포본과 동기화되어 있습니다.",
   });
 }
