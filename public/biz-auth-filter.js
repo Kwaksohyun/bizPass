@@ -1,7 +1,7 @@
 
 (function () {
     // 배포 후 콘솔에서 버전 확인 (카페24 scripttag 캐시 여부 점검용)
-    window.__bizAuthFilterVersion = '2026-05-29-join-submit-guard-v11';
+    window.__bizAuthFilterVersion = '2026-05-29-b2b-member-only-v13';
 
     var state = {
         ntsVerified: false,
@@ -85,9 +85,14 @@
         var bankUrlEl = document.getElementById('bizBankCopyUrl');
         if (bankUrlEl) bankUrlEl.value = state.bankCopyDoc.url || '';
 
-        // 카페24 추가항목(add1/add2)에 랜덤키 브릿지
-        setCafe24BridgeValue('biz-file-uploads-1', state.bizRegDoc.key || '');
-        setCafe24BridgeValue('biz-file-uploads-2', state.bankCopyDoc.key || '');
+        // 카페24 추가항목(add1/add2) — 사업자회원일 때만 키 주입
+        if (isBusinessMember()) {
+            setCafe24BridgeValue('biz-file-uploads-1', state.bizRegDoc.key || '');
+            setCafe24BridgeValue('biz-file-uploads-2', state.bankCopyDoc.key || '');
+        } else {
+            setCafe24BridgeValue('biz-file-uploads-1', '');
+            setCafe24BridgeValue('biz-file-uploads-2', '');
+        }
     }
 
     function injectHiddenDocFields() {
@@ -150,12 +155,13 @@
         }
     }
 
-    // 사용자 화면에서는 안 보이되, 값은 서버 전송되도록 유지
+    // 사용자 화면에서는 안 보이되, 값은 서버 전송되도록 유지 (사업자회원일 때만 DOM에 유지)
     function hideCafe24BridgeRows() {
         var rows = document.querySelectorAll(
             'tr.biz-file-uploads-1, tr.biz-file-uploads-2'
         );
         for (var i = 0; i < rows.length; i++) {
+            rows[i].classList.add('biz-b2b-only');
             rows[i].setAttribute('aria-hidden', 'true');
             rows[i].style.setProperty('display', 'none', 'important');
         }
@@ -500,6 +506,158 @@
         );
     }
 
+    function isNodeShown(node) {
+        if (!node) return false;
+        if (node.classList && node.classList.contains('displaynone')) return false;
+        var style = window.getComputedStyle(node);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+    }
+
+    // 카페24 member_type(p=개인, c=사업자) + 사업자번호 행 노출 여부
+    function isBusinessMember() {
+        var checked = document.querySelector('input[name="member_type"]:checked');
+        if (checked) {
+            var v = String(checked.value || '').trim().toLowerCase();
+            if (v === 'c' || v === 'b' || v === 'business') return true;
+            if (v === 'p' || v === 'personal' || v === 'individual') return false;
+        }
+
+        var companyNoRow = document.getElementById('companyNoRow');
+        if (companyNoRow) return isNodeShown(companyNoRow);
+
+        var cell = getBizNoCell();
+        if (cell) {
+            var tr = cell.closest('tr');
+            if (tr) return isNodeShown(tr);
+        }
+
+        if (!document.querySelector('input[name="member_type"]')) return true;
+        return false;
+    }
+
+    function getBizNoAnchorRow() {
+        var cell = getBizNoCell();
+        if (cell) {
+            var tr = cell.closest('tr');
+            if (tr) return tr;
+        }
+        var companyNoRow = document.getElementById('companyNoRow');
+        if (companyNoRow) return companyNoRow;
+        var companySsn = document.getElementById('companySsn');
+        if (companySsn) {
+            var companyTr = companySsn.closest('tr');
+            if (companyTr) return companyTr;
+        }
+        return null;
+    }
+
+    function getOurB2bFieldNodes() {
+        var nodes = [];
+        function push(node) {
+            if (!node) return;
+            for (var i = 0; i < nodes.length; i++) {
+                if (nodes[i] === node) return;
+            }
+            nodes.push(node);
+        }
+
+        var fileRows = document.querySelectorAll('.biz-file-row, #biz-file-uploads');
+        for (var i = 0; i < fileRows.length; i++) push(fileRows[i]);
+
+        var bridgeRows = document.querySelectorAll(
+            'tr.biz-file-uploads-1, tr.biz-file-uploads-2'
+        );
+        for (var j = 0; j < bridgeRows.length; j++) push(bridgeRows[j]);
+
+        return nodes;
+    }
+
+    function setOurB2bFieldsVisible(show) {
+        var nodes = getOurB2bFieldNodes();
+        for (var i = 0; i < nodes.length; i++) {
+            var node = nodes[i];
+            var isBridge =
+                node.classList &&
+                (node.classList.contains('biz-file-uploads-1') ||
+                    node.classList.contains('biz-file-uploads-2'));
+
+            if (!show) {
+                node.classList.add('biz-b2b-hidden');
+                node.style.setProperty('display', 'none', 'important');
+                if (isBridge) node.setAttribute('aria-hidden', 'true');
+                continue;
+            }
+
+            node.classList.remove('biz-b2b-hidden');
+            if (isBridge) {
+                // 키 브릿지는 사업자회원이어도 사용자에게는 숨김
+                node.setAttribute('aria-hidden', 'true');
+                node.style.setProperty('display', 'none', 'important');
+            } else {
+                node.removeAttribute('aria-hidden');
+                node.style.removeProperty('display');
+            }
+        }
+    }
+
+    function applyBusinessMemberUi() {
+        var business = isBusinessMember();
+        setOurB2bFieldsVisible(business);
+        if (!business) {
+            syncHiddenDocFields();
+            var btn = document.getElementById('btnMemberJoin');
+            if (btn) btn.classList.remove('biz-join-disabled');
+            return;
+        }
+        syncHiddenDocFields();
+        updateJoinButton();
+    }
+
+    function bindMemberTypeToggle() {
+        var form = findJoinForm();
+        if (!form || form.getAttribute('data-biz-member-bound') === '1') return;
+        form.setAttribute('data-biz-member-bound', '1');
+
+        function onMemberTypeChanged() {
+            if (!isBusinessMember()) resetFlow();
+            applyBusinessMemberUi();
+        }
+
+        form.addEventListener(
+            'change',
+            function (e) {
+                if (e.target && e.target.name === 'member_type') onMemberTypeChanged();
+            },
+            true
+        );
+        form.addEventListener(
+            'click',
+            function (e) {
+                if (
+                    e.target &&
+                    e.target.name === 'member_type' &&
+                    e.target.type === 'radio'
+                ) {
+                    setTimeout(onMemberTypeChanged, 0);
+                }
+            },
+            true
+        );
+    }
+
+    function watchCompanyRowVisibility() {
+        var row = document.getElementById('companyNoRow');
+        if (!row || typeof MutationObserver === 'undefined') return;
+        if (row.getAttribute('data-biz-row-watched') === '1') return;
+        row.setAttribute('data-biz-row-watched', '1');
+        new MutationObserver(function () {
+            applyBusinessMemberUi();
+        }).observe(row, {
+            attributes: true,
+            attributeFilter: ['class', 'style']
+        });
+    }
+
     function ensureMultipartForm() {
         var form = findJoinForm();
         if (!form) return;
@@ -567,7 +725,7 @@
 
     function createFileUploadRow(labelText, inputId, buttonText, emptyLabel) {
         var tr = document.createElement('tr');
-        tr.className = 'biz-file-row';
+        tr.className = 'biz-file-row biz-b2b-only';
 
         var th = document.createElement('th');
         th.scope = 'row';
@@ -610,7 +768,7 @@
 
     function createFileUploadBlock() {
         var block = document.createElement('div');
-        block.className = 'biz-file-uploads';
+        block.className = 'biz-file-uploads biz-b2b-only';
         block.id = 'biz-file-uploads';
 
         function addDivRow(labelText, inputId, buttonText, emptyLabel) {
@@ -681,29 +839,27 @@
         ensureMultipartForm();
 
         var inserted = false;
-        var cell = getBizNoCell();
-        if (cell) {
-            var bizTr = cell.closest('tr');
-            if (bizTr && bizTr.parentNode) {
-                var tbody = bizTr.parentNode;
-                var insertRef = bizTr.nextSibling;
-                var rowReg = createFileUploadRow(
-                    '사업자등록증',
-                    'bizFileBusinessReg',
-                    '사업자등록증 파일 첨부',
-                    '선택된 파일 없음'
-                );
-                var rowBank = createFileUploadRow(
-                    '통장 사본',
-                    'bizFileBankCopy',
-                    '통장 사본 첨부',
-                    '선택된 파일 없음'
-                );
-                rowReg.id = 'biz-file-uploads';
-                tbody.insertBefore(rowBank, insertRef);
-                tbody.insertBefore(rowReg, insertRef);
-                inserted = true;
-            }
+        var bizTr = getBizNoAnchorRow();
+        if (bizTr && bizTr.parentNode) {
+            var tbody = bizTr.parentNode;
+            var insertRef = bizTr.nextSibling;
+            var rowReg = createFileUploadRow(
+                '사업자등록증',
+                'bizFileBusinessReg',
+                '사업자등록증 파일 첨부',
+                '선택된 파일 없음'
+            );
+            var rowBank = createFileUploadRow(
+                '통장 사본',
+                'bizFileBankCopy',
+                '통장 사본 첨부',
+                '선택된 파일 없음'
+            );
+            rowReg.id = 'biz-file-uploads';
+            // 사업자번호 → 사업자등록증 → 통장사본
+            tbody.insertBefore(rowBank, insertRef);
+            tbody.insertBefore(rowReg, insertRef);
+            inserted = true;
         }
 
         if (!inserted) {
@@ -731,6 +887,7 @@
     }
 
     function hasRequiredFiles() {
+        if (!isBusinessMember()) return true;
         return (
             state.bizRegDoc.uploaded &&
             state.bankCopyDoc.uploaded &&
@@ -740,6 +897,7 @@
     }
 
     function validateRequiredFiles() {
+        if (!isBusinessMember()) return true;
         if (state.bizRegDoc.uploading || state.bankCopyDoc.uploading) {
             alert('파일 업로드가 진행 중입니다. 잠시만 기다려 주세요.');
             return false;
@@ -853,6 +1011,10 @@
         var btn = document.getElementById('btnMemberJoin');
         if (!btn) return;
         btn.removeAttribute('disabled');
+        if (!isBusinessMember()) {
+            btn.classList.remove('biz-join-disabled');
+            return;
+        }
         var ready =
             state.ntsVerified && state.duplVerified && hasRequiredFiles();
         if (ready) btn.classList.remove('biz-join-disabled');
@@ -920,7 +1082,7 @@
         var cssnMsg = document.querySelector('.cssn-dupl-msg');
         if (cssnMsg) cssnMsg.innerHTML = '';
 
-        setDuplBtnVisible(false);
+            setDuplBtnVisible(false);
         updateJoinButton();
         setBizVerifyPendingUi(true);
         setBizVerifyMsg(LOADING_MSG, null);
@@ -990,6 +1152,7 @@
 
     // 회원가입 submit 전 NTS·중복확인 완료 여부 검사(가드)
     window.bizJoinGuard = function () {
+        if (!isBusinessMember()) return true;
         reconcileVerifyState();
         syncDuplState();
         if (state.verifyPending) {
@@ -1063,9 +1226,12 @@
         injectFileUploadFields();
         injectHiddenDocFields();
         hideCafe24BridgeRows();
+        applyBusinessMemberUi();
         setDuplBtnVisible(false);
         updateJoinButton();
         bindBizNoInputs();
+        bindMemberTypeToggle();
+        watchCompanyRowVisibility();
         bindJoinGuard();
         watchDuplMsg();
 
@@ -1085,6 +1251,11 @@
         }
 
         setInterval(syncDuplState, 400);
+
+        // 카페24가 회원구분 전환 후 DOM을 늦게 갱신하는 경우 대비
+        [300, 800, 1500].forEach(function (ms) {
+            setTimeout(applyBusinessMemberUi, ms);
+        });
     }
 
     if (document.readyState === 'loading') {
