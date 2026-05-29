@@ -1,7 +1,7 @@
 
 (function () {
     // 배포 후 콘솔에서 버전 확인 (카페24 scripttag 캐시 여부 점검용)
-    window.__bizAuthFilterVersion = '2026-05-29-b2b-member-only-v13';
+    window.__bizAuthFilterVersion = '2026-05-29-b2b-file-order-v14';
 
     var state = {
         ntsVerified: false,
@@ -856,9 +856,9 @@
                 '선택된 파일 없음'
             );
             rowReg.id = 'biz-file-uploads';
-            // 사업자번호 → 사업자등록증 → 통장사본
-            tbody.insertBefore(rowBank, insertRef);
+            // 사업자번호 → 사업자등록증 → 통장사본 (먼저 등록증, 그다음 통장)
             tbody.insertBefore(rowReg, insertRef);
+            tbody.insertBefore(rowBank, insertRef);
             inserted = true;
         }
 
