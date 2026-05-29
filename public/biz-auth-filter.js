@@ -1,7 +1,7 @@
 
 (function () {
     // 배포 후 콘솔에서 버전 확인 (카페24 scripttag 캐시 여부 점검용)
-    window.__bizAuthFilterVersion = '2026-05-29-file-key-bridge-add1-add2-v9';
+    window.__bizAuthFilterVersion = '2026-05-29-join-submit-guard-v11';
 
     var state = {
         ntsVerified: false,
@@ -19,6 +19,7 @@
 
     var MAX_FILE_BYTES = 10 * 1024 * 1024;
     var ALLOWED_FILE_EXT = /\.(pdf|jpe?g|png|gif|webp)$/i;
+    var VERIFY_SESSION_KEY = 'bizpass_nts_verify';
 
     // scripttag src(biz-auth-filter.js) 호스트 → API 베이스 URL (카페24 쇼핑몰 도메인과 다름)
     function getApiBase() {
@@ -288,6 +289,80 @@
         return parts.join('');
     }
 
+    function saveVerifySession(bizNo) {
+        try {
+            sessionStorage.setItem(
+                VERIFY_SESSION_KEY,
+                JSON.stringify({
+                    ntsVerified: true,
+                    verifiedBizNo: bizNo,
+                    ts: Date.now()
+                })
+            );
+        } catch (e) {}
+    }
+
+    function loadVerifySession() {
+        try {
+            var raw = sessionStorage.getItem(VERIFY_SESSION_KEY);
+            if (!raw) return null;
+            var data = JSON.parse(raw);
+            if (!data || !data.verifiedBizNo || data.verifiedBizNo.length !== 10) {
+                return null;
+            }
+            return data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function clearVerifySession() {
+        try {
+            sessionStorage.removeItem(VERIFY_SESSION_KEY);
+        } catch (e) {}
+    }
+
+    function isVerifySuccessMsgVisible() {
+        var el = getBizVerifyMsgEl();
+        if (!el) return false;
+        var text = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
+        if (el.classList && el.classList.contains('txtSuccess')) return true;
+        return /사업자 확인이 완료/.test(text);
+    }
+
+    // 카페24 DOM 갱신·state 유실 후에도 확인 성공 상태를 복구
+    function reconcileVerifyState() {
+        if (state.verifyPending) return;
+
+        var cell = getBizNoCell();
+        var bizNo = getBizNoValue(cell);
+        var session = loadVerifySession();
+
+        if (!state.ntsVerified && session) {
+            if (!bizNo || bizNo === session.verifiedBizNo) {
+                state.ntsVerified = true;
+                state.verifiedBizNo = session.verifiedBizNo;
+            }
+        }
+
+        if (!state.ntsVerified && isVerifySuccessMsgVisible()) {
+            var candidate =
+                (bizNo && bizNo.length === 10 ? bizNo : '') ||
+                (session && session.verifiedBizNo) ||
+                state.verifiedBizNo;
+            if (candidate && candidate.length === 10) {
+                state.ntsVerified = true;
+                state.verifiedBizNo = candidate;
+            }
+        }
+
+        if (state.ntsVerified && state.verifiedBizNo && bizNo && bizNo.length === 10) {
+            if (bizNo !== state.verifiedBizNo) {
+                resetFlow();
+            }
+        }
+    }
+
     function getBizVerifyMsgEl() {
         return document.getElementById('bizVerifyMsg');
     }
@@ -411,7 +486,9 @@
             '.biz-file-btn:hover{background:#f0f0f0;}' +
             '.biz-file-name{color:#333;font-size:13px;max-width:100%;word-break:break-all;}' +
             '.biz-file-name.biz-file-empty{color:#999;}' +
-            '.biz-file-err{display:block;width:100%;color:#d32f2f;font-size:12px;margin-top:4px;}';
+            '.biz-file-err{display:block;width:100%;color:#d32f2f;font-size:12px;margin-top:4px;}' +
+            '#btnMemberJoin.biz-join-disabled,.btnMemberJoin.biz-join-disabled{' +
+            'opacity:.85 !important;}';
         document.head.appendChild(style);
     }
 
@@ -731,6 +808,7 @@
         if (data && data.ok) {
             state.ntsVerified = true;
             state.verifiedBizNo = bizNo;
+            saveVerifySession(bizNo);
             setBizVerifyMsg(
                 '사업자 확인이 완료되었습니다. 중복확인을 진행해 주세요.',
                 true
@@ -770,13 +848,14 @@
         else btn.classList.add('displaynone');
     }
 
-    // NTS·중복확인 완료 여부에 따라 회원가입 버튼 활성/비활성
+    // B2B 준비 상태 표시용 (클릭/제출은 막지 않음 — 카페24 필수항목 검증 + submit 가드)
     function updateJoinButton() {
         var btn = document.getElementById('btnMemberJoin');
         if (!btn) return;
-        var enabled =
+        btn.removeAttribute('disabled');
+        var ready =
             state.ntsVerified && state.duplVerified && hasRequiredFiles();
-        if (enabled) btn.classList.remove('biz-join-disabled');
+        if (ready) btn.classList.remove('biz-join-disabled');
         else btn.classList.add('biz-join-disabled');
     }
 
@@ -795,6 +874,7 @@
         state.ntsVerified = false;
         state.duplVerified = false;
         state.verifiedBizNo = '';
+        clearVerifySession();
         setBizVerifyMsg('', undefined);
         setDuplBtnVisible(false);
         var cssnMsg = document.querySelector('.cssn-dupl-msg');
@@ -834,12 +914,14 @@
         state.duplVerified = false;
         state.ntsVerified = false;
         state.verifiedBizNo = '';
+        clearVerifySession();
         state.verifyPending = true;
 
         var cssnMsg = document.querySelector('.cssn-dupl-msg');
         if (cssnMsg) cssnMsg.innerHTML = '';
 
-            setDuplBtnVisible(false);
+        setDuplBtnVisible(false);
+        updateJoinButton();
         setBizVerifyPendingUi(true);
         setBizVerifyMsg(LOADING_MSG, null);
         setVerifyUiLocked(true);
@@ -891,9 +973,13 @@
     // 중복확인 결과를 state에 반영하고 가입 버튼 상태 갱신
     function syncDuplState() {
         if (state.verifyPending) return;
+        reconcileVerifyState();
         if (!state.ntsVerified) return;
         var cell = getBizNoCell();
-        if (getBizNoValue(cell) !== state.verifiedBizNo) {
+        var currentBizNo = getBizNoValue(cell);
+        // 중복확인 후 input DOM이 비워져도 verifiedBizNo는 유지 (사용자 변경이 아님)
+        if (!currentBizNo && state.verifiedBizNo) return;
+        if (currentBizNo && currentBizNo !== state.verifiedBizNo) {
             resetFlow();
             return;
         }
@@ -904,6 +990,8 @@
 
     // 회원가입 submit 전 NTS·중복확인 완료 여부 검사(가드)
     window.bizJoinGuard = function () {
+        reconcileVerifyState();
+        syncDuplState();
         if (state.verifyPending) {
             alert('사업자 확인이 진행 중입니다. 잠시만 기다려 주세요.');
             return false;
@@ -926,17 +1014,36 @@
     // 사업자번호 input 변경 시 검증 상태 초기화 이벤트 연결
     function bindBizNoInputs() {
         var cell = getBizNoCell();
-        var inputs = getBizNoInputs(cell);
-        for (var i = 0; i < inputs.length; i++) {
-            inputs[i].addEventListener('input', function () {
-                if (state.verifyPending) return;
-                if (getBizNoValue(cell) !== state.verifiedBizNo) resetFlow();
-            });
-            inputs[i].addEventListener('change', function () {
-                if (state.verifyPending) return;
-                if (getBizNoValue(cell) !== state.verifiedBizNo) resetFlow();
-            });
+        if (!cell || cell.getAttribute('data-biz-no-bound') === '1') return;
+        cell.setAttribute('data-biz-no-bound', '1');
+
+        function onBizNoEdited() {
+            if (state.verifyPending) return;
+            var current = getBizNoValue(getBizNoCell());
+            if (!current || !state.verifiedBizNo) return;
+            if (current !== state.verifiedBizNo) resetFlow();
         }
+
+        cell.addEventListener('input', onBizNoEdited, true);
+        cell.addEventListener('change', onBizNoEdited, true);
+    }
+
+    function bindJoinGuard() {
+        var form = findJoinForm();
+        if (!form || form.getAttribute('data-biz-guard-bound') === '1') return;
+        form.setAttribute('data-biz-guard-bound', '1');
+        // submit 시점에만 B2B 검증 — 카페24 필수입력·기본 검증 흐름은 그대로
+        form.addEventListener(
+            'submit',
+            function (e) {
+                if (!window.bizJoinGuard()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+                }
+            },
+            true
+        );
     }
 
     // 중복확인 메시지 영역 DOM 변경 감시
@@ -959,6 +1066,7 @@
         setDuplBtnVisible(false);
         updateJoinButton();
         bindBizNoInputs();
+        bindJoinGuard();
         watchDuplMsg();
 
         var verifyBtn = document.getElementById('btnBizVerify');
