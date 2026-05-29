@@ -1,6 +1,14 @@
 import { getServerSession } from "@/lib/auth/server-session";
-import { shopsTable } from "@/lib/db";
 import { ensureValidAccessToken } from "@/lib/api/ensureValidAccessToken";
+import {
+  findInstalledBySrc,
+  getScriptTagSrc,
+  listScriptTags,
+  SCRIPT_TAG_DISPLAY_LOCATIONS,
+} from "@/lib/cafe24/scripttags";
+import { shopsTable } from "@/lib/db";
+
+import { ScriptTagPanel, type ScriptTagPanelInitial } from "./ScriptTagPanel";
 import styles from "./dashboard.module.css";
 
 export default async function DashboardPage({
@@ -36,6 +44,29 @@ export default async function DashboardPage({
     typeof tokenStatus === "string" && tokenStatus.length > 0;
   const reinstall =
     typeof tokenStatus === "object" && tokenStatus?.reinstallRequired;
+
+  let scriptTagInitial: ScriptTagPanelInitial | null = null;
+
+  if (tokenOk) {
+    const tagResult = await listScriptTags(mallId, tokenStatus);
+    if (tagResult.ok) {
+      const installed = findInstalledBySrc(tagResult.ours);
+      scriptTagInitial = {
+        src: getScriptTagSrc(),
+        display_location: SCRIPT_TAG_DISPLAY_LOCATIONS,
+        installed: !!installed,
+        scripttag: installed ?? null,
+      };
+    } else {
+      scriptTagInitial = {
+        src: getScriptTagSrc(),
+        display_location: SCRIPT_TAG_DISPLAY_LOCATIONS,
+        installed: false,
+        scripttag: null,
+        fetchError: tagResult.error,
+      };
+    }
+  }
 
   return (
     <div className={styles.shell}>
@@ -77,6 +108,13 @@ export default async function DashboardPage({
             <a href={`/?mall_id=${mallId}&oauth_required=true`}>권한 다시 요청</a>
           </p>
         )}
+
+        <ScriptTagPanel
+          mallId={mallId}
+          tokenOk={tokenOk}
+          reinstall={!!reinstall}
+          initial={scriptTagInitial}
+        />
       </div>
     </div>
   );
