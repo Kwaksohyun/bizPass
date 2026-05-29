@@ -1,0 +1,52 @@
+<!--
+  check.html — 카페24 회원가입(join.html) 디자인 편집용 참고 스니펫
+
+  ⚠️ 이 파일은 bizPass 저장소에만 있으며, 카페24에 자동 반영되지 않습니다.
+  아래 add1/add2 <tr> 블록을 카페24 디자인 편집 → 회원 → 회원가입(join.html)에
+  동일하게 붙여넣어야 public/biz-auth-filter.js 가 동작합니다.
+
+  연동:
+  - tr.biz-file-uploads-1 → add1 (사업자등록증 document_key)
+  - tr.biz-file-uploads-2 → add2 (통장사본 document_key)
+  - hideCafe24BridgeRows() / setCafe24BridgeValue() 가 위 class 로 찾음
+
+  카페24 관리자 (회원가입항목):
+  - add1: 사용함, 항목명 예) 사업자등록 키 (화면에서는 JS로 숨김)
+  - add2: 사용함, 항목명 예) 통장사본 키
+  - 필수: 선택 권장 (사용자가 직접 입력하지 않음)
+-->
+
+<!-- ========== 카페24 join.html 에 붙여넣을 부분 (add1 / add2 만 교체) ========== -->
+
+            <tr class="{$display_add1|display} biz-file-uploads-1">
+                <th scope="row">{$title_add1} <img src="//img.echosting.cafe24.com/skin/base/common/ico_required_blue.gif" class="{$display_required_add1|display}" alt="필수" /></th>
+                <td>{$form.add1}</td>
+            </tr>
+            <tr class="{$display_add2|display} biz-file-uploads-2">
+                <th scope="row">{$title_add2} <img src="//img.echosting.cafe24.com/skin/base/common/ico_required_blue.gif" class="{$display_required_add2|display}" alt="필수" /></th>
+                <td>{$form.add2}</td>
+            </tr>
+
+<!-- ========== 참고: 추가정보 섹션 전체 컨텍스트 ========== -->
+
+<!--
+    <h3 class="{$display_add_title|display}">추가정보</h3>
+    <div class="ec-base-table typeWrite {$display_add_title|display}">
+        <table border="1" summary="">
+        <caption>회원 추가정보</caption>
+        <colgroup>
+            <col style="width:150px;" />
+            <col style="width:auto;" />
+        </colgroup>
+        <tbody>
+            ... (별명, 성별 등 기본 추가항목) ...
+
+            ★ 위 "add1 / add2" 블록을 추가정보 tbody 안 적절한 위치에 넣으세요 ★
+
+            <tr class="{$display_reco_id|display}">
+                ...
+            </tr>
+        </tbody>
+        </table>
+    </div>
+-->

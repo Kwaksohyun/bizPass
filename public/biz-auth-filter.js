@@ -1,7 +1,7 @@
 
 (function () {
     // 배포 후 콘솔에서 버전 확인 (카페24 scripttag 캐시 여부 점검용)
-    window.__bizAuthFilterVersion = '2026-05-28-file-key-bridge-v8';
+    window.__bizAuthFilterVersion = '2026-05-29-file-key-bridge-add1-add2-v9';
 
     var state = {
         ntsVerified: false,
@@ -73,6 +73,7 @@
         return getBizNoValue(getBizNoCell());
     }
 
+    // 카페24 추가항목에 랜덤키 주입
     function syncHiddenDocFields() {
         var sessionEl = document.getElementById('bizUploadSessionId');
         if (sessionEl) sessionEl.value = getUploadSessionId();
@@ -83,7 +84,7 @@
         var bankUrlEl = document.getElementById('bizBankCopyUrl');
         if (bankUrlEl) bankUrlEl.value = state.bankCopyDoc.url || '';
 
-        // 카페24 추가항목(add2/add3)에 랜덤키 브릿지
+        // 카페24 추가항목(add1/add2)에 랜덤키 브릿지
         setCafe24BridgeValue('biz-file-uploads-1', state.bizRegDoc.key || '');
         setCafe24BridgeValue('biz-file-uploads-2', state.bankCopyDoc.key || '');
     }
@@ -122,6 +123,7 @@
         }
     }
 
+    //
     function buildRandomDocKey(prefix) {
         return (
             prefix +
@@ -132,7 +134,7 @@
         );
     }
 
-    // check.html add2/add3 행의 실제 input에 키값 주입
+    // check.html add1/add2 행의 실제 input에 키값 주입
     function setCafe24BridgeValue(rowClassName, value) {
         var row = document.querySelector('tr.' + rowClassName);
         if (!row) return;
@@ -175,6 +177,7 @@
         }).catch(function () {});
     }
 
+    //
     function uploadDocumentToServer(file, documentType, docStateKey, inputId, emptyLabel) {
         var apiBase = getApiBase();
         var mallId = getMallId();
